@@ -36,6 +36,15 @@
         </div>
       </div>
 
+      <div class="input-panel" aria-label="数字入力パネル">
+        <div class="mode-toggle" role="group" aria-label="入力モード">
+          <button type="button" id="normalModeButton" class="mode-button active" aria-pressed="true">通常入力</button>
+          <button type="button" id="memoModeButton" class="mode-button" aria-pressed="false">メモ入力</button>
+        </div>
+        <div class="number-pad" id="numberPad" aria-label="数字ボタン"></div>
+        <button type="button" id="deleteButton" class="delete-button">削除</button>
+      </div>
+
       <div class="actions">
         <button type="button" id="checkButton">正解チェック</button>
         <button type="button" id="answerButton">答えを見る</button>
