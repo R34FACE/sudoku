@@ -16,6 +16,10 @@ const difficultyElement = document.getElementById("difficulty");
 const newGameButton = document.getElementById("newGameButton");
 const checkButton = document.getElementById("checkButton");
 const answerButton = document.getElementById("answerButton");
+const normalModeButton = document.getElementById("normalModeButton");
+const memoModeButton = document.getElementById("memoModeButton");
+const numberPadElement = document.getElementById("numberPad");
+const deleteButton = document.getElementById("deleteButton");
 const statusElement = document.getElementById("status");
 const loadingElement = document.getElementById("loading");
 const dateLineElement = document.getElementById("dateLine");
@@ -24,6 +28,15 @@ let puzzle = [];
 let solution = [];
 let isShowingAnswer = false;
 let generationId = 0;
+let inputMode = "normal";
+let selectedCell = null;
+let notes = createNotes();
+
+function createNotes() {
+  return Array.from({ length: SIZE }, () =>
+    Array.from({ length: SIZE }, () => new Set())
+  );
+}
 
 function createEmptyBoard() {
   return Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
@@ -183,6 +196,12 @@ function setBusy(isBusy) {
   difficultyElement.disabled = isBusy;
   checkButton.disabled = isBusy;
   answerButton.disabled = isBusy;
+  normalModeButton.disabled = isBusy;
+  memoModeButton.disabled = isBusy;
+  deleteButton.disabled = isBusy;
+  numberPadElement.querySelectorAll("button").forEach((button) => {
+    button.disabled = isBusy;
+  });
   loadingElement.classList.toggle("visible", isBusy);
   loadingElement.setAttribute("aria-hidden", String(!isBusy));
 }
@@ -199,9 +218,13 @@ function renderBoard() {
     row.forEach((value, columnIndex) => {
       const cell = document.createElement("div");
       const input = document.createElement("input");
+      const noteGrid = document.createElement("div");
       const isGiven = value !== 0;
 
       cell.className = `cell${isGiven ? " given" : ""}`;
+      cell.dataset.row = String(rowIndex);
+      cell.dataset.column = String(columnIndex);
+
       input.type = "text";
       input.inputMode = "numeric";
       input.pattern = "[1-9]";
@@ -216,22 +239,184 @@ function renderBoard() {
         `${rowIndex + 1}行${columnIndex + 1}列${isGiven ? `、${value}、変更不可` : "、空欄"}`
       );
 
+      noteGrid.className = "notes";
+      noteGrid.setAttribute("aria-hidden", "true");
+      for (let number = 1; number <= SIZE; number += 1) {
+        const note = document.createElement("span");
+        note.dataset.number = String(number);
+        noteGrid.appendChild(note);
+      }
+
       input.addEventListener("input", handleCellInput);
       input.addEventListener("keydown", handleCellKeydown);
-      cell.appendChild(input);
+      input.addEventListener("focus", handleCellFocus);
+      input.addEventListener("click", handleCellFocus);
+      cell.addEventListener("click", () => {
+        if (!input.readOnly) {
+          input.focus();
+        }
+      });
+
+      cell.append(input, noteGrid);
       boardElement.appendChild(cell);
+      updateCellNotes(rowIndex, columnIndex);
     });
   });
+
+  updateHighlights();
+}
+
+function handleCellFocus(event) {
+  selectedCell = {
+    row: Number(event.target.dataset.row),
+    column: Number(event.target.dataset.column)
+  };
+  updateHighlights();
+}
+
+function getInput(row, column) {
+  return boardElement.querySelector(`input[data-row="${row}"][data-column="${column}"]`);
+}
+
+function getCell(row, column) {
+  return boardElement.querySelector(`.cell[data-row="${row}"][data-column="${column}"]`);
+}
+
+function updateCellNotes(row, column) {
+  const cell = getCell(row, column);
+  if (!cell) {
+    return;
+  }
+
+  const input = getInput(row, column);
+  const cellNotes = notes[row][column];
+  cell.classList.toggle("has-notes", !input.value && cellNotes.size > 0);
+  cell.querySelectorAll(".notes span").forEach((note) => {
+    const number = Number(note.dataset.number);
+    note.textContent = cellNotes.has(number) ? String(number) : "";
+  });
+}
+
+function setInputMode(mode) {
+  inputMode = mode;
+  const isNormal = mode === "normal";
+  normalModeButton.classList.toggle("active", isNormal);
+  memoModeButton.classList.toggle("active", !isNormal);
+  normalModeButton.setAttribute("aria-pressed", String(isNormal));
+  memoModeButton.setAttribute("aria-pressed", String(!isNormal));
+  setStatus(isNormal ? "通常入力モードです。" : "メモ入力モードです。");
+}
+
+function clearCheckClasses() {
+  boardElement.querySelectorAll(".cell").forEach((cell) => {
+    cell.classList.remove("incorrect", "correct");
+  });
+}
+
+function getSelectedInput() {
+  if (!selectedCell) {
+    return null;
+  }
+  return getInput(selectedCell.row, selectedCell.column);
+}
+
+function enterNumber(number) {
+  const input = getSelectedInput();
+  if (!input || input.readOnly || isShowingAnswer) {
+    return;
+  }
+
+  const row = Number(input.dataset.row);
+  const column = Number(input.dataset.column);
+  clearCheckClasses();
+
+  if (inputMode === "normal") {
+    input.value = input.value === String(number) ? "" : String(number);
+    notes[row][column].clear();
+  } else if (!input.value) {
+    if (notes[row][column].has(number)) {
+      notes[row][column].delete(number);
+    } else {
+      notes[row][column].add(number);
+    }
+  }
+
+  updateCellNotes(row, column);
+  updateHighlights();
+  setStatus("数字を入力してください。");
+}
+
+function deleteSelectedCell() {
+  const input = getSelectedInput();
+  if (!input || input.readOnly || isShowingAnswer) {
+    return;
+  }
+
+  const row = Number(input.dataset.row);
+  const column = Number(input.dataset.column);
+  input.value = "";
+  notes[row][column].clear();
+  clearCheckClasses();
+  updateCellNotes(row, column);
+  updateHighlights();
+  setStatus("選択中のマスを削除しました。");
+}
+
+function updateHighlights() {
+  const selectedValue = selectedCell ? getInput(selectedCell.row, selectedCell.column)?.value : "";
+  boardElement.querySelectorAll(".cell").forEach((cell) => {
+    const row = Number(cell.dataset.row);
+    const column = Number(cell.dataset.column);
+    const sameRow = selectedCell && row === selectedCell.row;
+    const sameColumn = selectedCell && column === selectedCell.column;
+    const sameBox = selectedCell &&
+      Math.floor(row / BOX_SIZE) === Math.floor(selectedCell.row / BOX_SIZE) &&
+      Math.floor(column / BOX_SIZE) === Math.floor(selectedCell.column / BOX_SIZE);
+    const input = cell.querySelector("input");
+
+    cell.classList.toggle("selected", Boolean(selectedCell && row === selectedCell.row && column === selectedCell.column));
+    cell.classList.toggle("related", Boolean((sameRow || sameColumn || sameBox) && !(selectedCell && row === selectedCell.row && column === selectedCell.column)));
+    cell.classList.toggle("same-number", Boolean(selectedValue && input.value === selectedValue));
+  });
+}
+
+function createNumberPad() {
+  numberPadElement.replaceChildren();
+  for (let number = 1; number <= SIZE; number += 1) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = String(number);
+    button.setAttribute("aria-label", `${number}を入力`);
+    button.addEventListener("click", () => enterNumber(number));
+    numberPadElement.appendChild(button);
+  }
 }
 
 function handleCellInput(event) {
   const input = event.target;
   input.value = input.value.replace(/[^1-9]/g, "").slice(-1);
-  input.parentElement.classList.remove("incorrect", "correct");
+  const row = Number(input.dataset.row);
+  const column = Number(input.dataset.column);
+  notes[row][column].clear();
+  updateCellNotes(row, column);
+  clearCheckClasses();
+  updateHighlights();
   setStatus("数字を入力してください。");
 }
 
 function handleCellKeydown(event) {
+  if (/^[1-9]$/.test(event.key)) {
+    event.preventDefault();
+    enterNumber(Number(event.key));
+    return;
+  }
+
+  if (["Backspace", "Delete", "0"].includes(event.key)) {
+    event.preventDefault();
+    deleteSelectedCell();
+    return;
+  }
+
   if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
     return;
   }
@@ -257,6 +442,8 @@ function handleCellKeydown(event) {
     );
     if (nextInput && !nextInput.readOnly) {
       nextInput.focus();
+      selectedCell = { row: nextRow, column: nextColumn };
+      updateHighlights();
       return;
     }
   }
@@ -319,6 +506,8 @@ function showAnswer() {
     const column = Number(input.dataset.column);
     input.value = String(solution[row][column]);
     input.readOnly = true;
+    notes[row][column].clear();
+    updateCellNotes(row, column);
     input.parentElement.classList.remove("incorrect", "correct");
   });
 
@@ -356,7 +545,10 @@ function startNewGame() {
 
     puzzle = result.puzzle;
     solution = result.solution;
+    notes = createNotes();
+    selectedCell = null;
     isShowingAnswer = false;
+    setInputMode("normal");
     answerButton.textContent = "答えを見る";
     renderBoard();
     setBusy(false);
@@ -386,6 +578,10 @@ function setDateLine() {
 newGameButton.addEventListener("click", startNewGame);
 checkButton.addEventListener("click", checkAnswer);
 answerButton.addEventListener("click", showAnswer);
+normalModeButton.addEventListener("click", () => setInputMode("normal"));
+memoModeButton.addEventListener("click", () => setInputMode("memo"));
+deleteButton.addEventListener("click", deleteSelectedCell);
 
+createNumberPad();
 setDateLine();
 startNewGame();

@@ -339,3 +339,108 @@ footer {
     transition: none !important;
   }
 }
+
+.cell.related input {
+  background: rgba(23, 79, 118, 0.055);
+}
+
+.cell.selected input {
+  outline: 3px solid rgba(139, 30, 30, 0.7);
+  outline-offset: -3px;
+  background: rgba(139, 30, 30, 0.1);
+}
+
+.cell.same-number input {
+  background: rgba(245, 184, 66, 0.22);
+}
+
+.cell.selected.same-number input {
+  background: rgba(139, 30, 30, 0.14);
+}
+
+.notes {
+  position: absolute;
+  inset: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  pointer-events: none;
+  color: #174f76;
+  font-family: Arial, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: clamp(0.55rem, 2.2vw, 0.82rem);
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
+.notes span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cell.has-notes input {
+  color: transparent;
+}
+
+.input-panel {
+  display: grid;
+  gap: 10px;
+  width: min(92vw, 540px);
+  margin: 14px auto 0;
+}
+
+.mode-toggle,
+.number-pad {
+  display: grid;
+  gap: 8px;
+}
+
+.mode-toggle {
+  grid-template-columns: 1fr 1fr;
+}
+
+.mode-button.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.number-pad {
+  grid-template-columns: repeat(9, 1fr);
+}
+
+.number-pad button,
+.delete-button,
+.mode-button {
+  min-height: 48px;
+  padding-right: 6px;
+  padding-left: 6px;
+  touch-action: manipulation;
+}
+
+.number-pad button {
+  font-size: 1.25rem;
+}
+
+.delete-button {
+  color: #fff;
+  background: var(--ink);
+}
+
+@media (max-width: 520px) {
+  .input-panel {
+    width: 94vw;
+  }
+
+  .number-pad {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .number-pad button,
+  .delete-button,
+  .mode-button {
+    min-height: 50px;
+  }
+}
