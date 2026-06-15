@@ -3,6 +3,7 @@
 const SIZE = 9;
 const BOX_SIZE = 3;
 const CELL_COUNT = SIZE * SIZE;
+const MAX_MISTAKES = 5;
 
 const DIFFICULTIES = {
   beginner: { label: "初級", min: 35, max: 40 },
@@ -22,15 +23,28 @@ const numberPadElement = document.getElementById("numberPad");
 const deleteButton = document.getElementById("deleteButton");
 const statusElement = document.getElementById("status");
 const loadingElement = document.getElementById("loading");
+const mistakeCounterElement = document.getElementById("mistakeCounter");
+const continueCounterElement = document.getElementById("continueCounter");
+const gameOverOverlayElement = document.getElementById("gameOverOverlay");
+const gameOverMainElement = document.getElementById("gameOverMain");
+const newGameConfirmElement = document.getElementById("newGameConfirm");
+const continueButton = document.getElementById("continueButton");
+const gameOverNewGameButton = document.getElementById("gameOverNewGameButton");
+const confirmNewGameButton = document.getElementById("confirmNewGameButton");
+const cancelNewGameButton = document.getElementById("cancelNewGameButton");
 const dateLineElement = document.getElementById("dateLine");
 
 let puzzle = [];
-let solution = [];
+let playerBoard = createEmptyBoard();
+let solutionBoard = [];
+let candidateNotes = createNotes();
+let mistakeCount = 0;
+let continueCount = 0;
+let isGameOver = false;
 let isShowingAnswer = false;
 let generationId = 0;
 let inputMode = "normal";
 let selectedCell = null;
-let notes = createNotes();
 
 function createNotes() {
   return Array.from({ length: SIZE }, () =>
@@ -194,16 +208,78 @@ function generatePuzzle(blankCount) {
 function setBusy(isBusy) {
   newGameButton.disabled = isBusy;
   difficultyElement.disabled = isBusy;
-  checkButton.disabled = isBusy;
-  answerButton.disabled = isBusy;
-  normalModeButton.disabled = isBusy;
-  memoModeButton.disabled = isBusy;
-  deleteButton.disabled = isBusy;
-  numberPadElement.querySelectorAll("button").forEach((button) => {
-    button.disabled = isBusy;
-  });
   loadingElement.classList.toggle("visible", isBusy);
   loadingElement.setAttribute("aria-hidden", String(!isBusy));
+  updateGameControls(isBusy);
+}
+
+function updateGameControls(isBusy = false) {
+  const controlsDisabled = isBusy || isGameOver;
+  checkButton.disabled = controlsDisabled;
+  answerButton.disabled = controlsDisabled;
+  normalModeButton.disabled = controlsDisabled;
+  memoModeButton.disabled = controlsDisabled;
+  deleteButton.disabled = controlsDisabled;
+  numberPadElement.querySelectorAll("button").forEach((button) => {
+    button.disabled = controlsDisabled;
+  });
+  getCells().forEach((cell) => {
+    if (cell instanceof HTMLButtonElement) {
+      cell.disabled = controlsDisabled || isShowingAnswer;
+    }
+  });
+}
+
+function updateGameStats() {
+  mistakeCounterElement.textContent = `間違い：${mistakeCount} / ${MAX_MISTAKES}`;
+  continueCounterElement.textContent = `コンテニュー：${continueCount}回`;
+  mistakeCounterElement.classList.toggle("warning", mistakeCount >= MAX_MISTAKES - 1 && mistakeCount < MAX_MISTAKES);
+  mistakeCounterElement.classList.toggle("danger", mistakeCount >= MAX_MISTAKES);
+}
+
+function showGameOverOverlay(showConfirm = false) {
+  gameOverOverlayElement.classList.add("visible");
+  gameOverOverlayElement.setAttribute("aria-hidden", "false");
+  gameOverMainElement.hidden = showConfirm;
+  newGameConfirmElement.hidden = !showConfirm;
+}
+
+function hideGameOverOverlay() {
+  gameOverOverlayElement.classList.remove("visible");
+  gameOverOverlayElement.setAttribute("aria-hidden", "true");
+  gameOverMainElement.hidden = false;
+  newGameConfirmElement.hidden = true;
+}
+
+function triggerGameOver() {
+  isGameOver = true;
+  updateGameStats();
+  updateGameControls(false);
+  showGameOverOverlay(false);
+  setStatus("ゲームオーバーです。コンテニューまたはニューゲームを選んでください。", "error");
+}
+
+function continueGame() {
+  mistakeCount = 0;
+  continueCount += 1;
+  isGameOver = false;
+  hideGameOverOverlay();
+  updateGameStats();
+  updateGameControls(false);
+  setStatus("コンテニューしました。間違い回数を0に戻しました。");
+}
+
+function showNewGameConfirmation() {
+  showGameOverOverlay(true);
+}
+
+function cancelNewGameConfirmation() {
+  showGameOverOverlay(false);
+}
+
+function confirmNewGameFromGameOver() {
+  hideGameOverOverlay();
+  startNewGame();
 }
 
 function setStatus(message, type = "") {
@@ -214,9 +290,9 @@ function setStatus(message, type = "") {
 function renderBoard() {
   boardElement.replaceChildren();
 
-  puzzle.forEach((row, rowIndex) => {
+  playerBoard.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
-      const isGiven = value !== 0;
+      const isGiven = puzzle[rowIndex][columnIndex] !== 0;
       const cell = document.createElement(isGiven ? "div" : "button");
       const valueElement = document.createElement("span");
       const noteGrid = document.createElement("div");
@@ -224,14 +300,14 @@ function renderBoard() {
       cell.className = `cell${isGiven ? " given" : ""}`;
       cell.dataset.row = String(rowIndex);
       cell.dataset.column = String(columnIndex);
-      cell.dataset.value = isGiven ? String(value) : "";
+      cell.dataset.value = value ? String(value) : "";
       cell.setAttribute(
         "aria-label",
-        `${rowIndex + 1}行${columnIndex + 1}列${isGiven ? `、${value}、変更不可` : "、空欄"}`
+        `${rowIndex + 1}行${columnIndex + 1}列${isGiven ? `、${value}、変更不可` : value ? `、${value}` : "、空欄"}`
       );
 
       valueElement.className = "cell-value";
-      valueElement.textContent = isGiven ? String(value) : "";
+      valueElement.textContent = value ? String(value) : "";
 
       if (isGiven) {
         cell.setAttribute("aria-disabled", "true");
@@ -258,6 +334,10 @@ function renderBoard() {
 }
 
 function handleCellSelect(event) {
+  if (isGameOver || isShowingAnswer) {
+    return;
+  }
+
   selectedCell = {
     row: Number(event.currentTarget.dataset.row),
     column: Number(event.currentTarget.dataset.column)
@@ -275,7 +355,7 @@ function updateCellNotes(row, column) {
     return;
   }
 
-  const cellNotes = notes[row][column];
+  const cellNotes = candidateNotes[row][column];
   cell.classList.toggle("has-notes", !getCellValue(cell) && cellNotes.size > 0);
   cell.querySelectorAll(".notes span").forEach((note) => {
     const number = Number(note.dataset.number);
@@ -319,7 +399,7 @@ function getSelectedEditableCell() {
 
 function enterNumber(number) {
   const cell = getSelectedEditableCell();
-  if (!cell || isShowingAnswer) {
+  if (!cell || isShowingAnswer || isGameOver) {
     return;
   }
 
@@ -328,13 +408,24 @@ function enterNumber(number) {
   clearCheckClasses();
 
   if (inputMode === "normal") {
-    setCellValue(cell, getCellValue(cell) === String(number) ? "" : String(number));
-    notes[row][column].clear();
+    if (number !== solutionBoard[row][column]) {
+      mistakeCount += 1;
+      updateGameStats();
+      setStatus(`間違いです。${MAX_MISTAKES}回でゲームオーバーになります。`, "error");
+      if (mistakeCount >= MAX_MISTAKES) {
+        triggerGameOver();
+      }
+      return;
+    }
+
+    playerBoard[row][column] = number;
+    setCellValue(cell, String(number));
+    candidateNotes[row][column].clear();
   } else if (!getCellValue(cell)) {
-    if (notes[row][column].has(number)) {
-      notes[row][column].delete(number);
+    if (candidateNotes[row][column].has(number)) {
+      candidateNotes[row][column].delete(number);
     } else {
-      notes[row][column].add(number);
+      candidateNotes[row][column].add(number);
     }
   }
 
@@ -345,14 +436,15 @@ function enterNumber(number) {
 
 function deleteSelectedCell() {
   const cell = getSelectedEditableCell();
-  if (!cell || isShowingAnswer) {
+  if (!cell || isShowingAnswer || isGameOver) {
     return;
   }
 
   const row = Number(cell.dataset.row);
   const column = Number(cell.dataset.column);
   setCellValue(cell, "");
-  notes[row][column].clear();
+  playerBoard[row][column] = 0;
+  candidateNotes[row][column].clear();
   clearCheckClasses();
   updateCellNotes(row, column);
   updateHighlights();
@@ -394,6 +486,11 @@ function getCells() {
 
 
 function checkAnswer() {
+  if (isGameOver) {
+    setStatus("ゲームオーバー中です。コンテニューまたはニューゲームを選んでください。", "error");
+    return;
+  }
+
   if (isShowingAnswer) {
     setStatus("完成盤面を表示しています。", "success");
     return;
@@ -414,7 +511,7 @@ function checkAnswer() {
 
     if (!getCellValue(cell)) {
       hasEmptyCell = true;
-    } else if (value !== solution[row][column]) {
+    } else if (value !== solutionBoard[row][column]) {
       hasIncorrectCell = true;
       cell.classList.add("incorrect");
     } else {
@@ -432,6 +529,10 @@ function checkAnswer() {
 }
 
 function showAnswer() {
+  if (isGameOver) {
+    return;
+  }
+
   if (isShowingAnswer) {
     renderBoard();
     isShowingAnswer = false;
@@ -443,8 +544,8 @@ function showAnswer() {
   getCells().forEach((cell) => {
     const row = Number(cell.dataset.row);
     const column = Number(cell.dataset.column);
-    setCellValue(cell, String(solution[row][column]));
-    notes[row][column].clear();
+    setCellValue(cell, String(solutionBoard[row][column]));
+    candidateNotes[row][column].clear();
     updateCellNotes(row, column);
     cell.classList.remove("incorrect", "correct");
   });
@@ -482,10 +583,16 @@ function startNewGame() {
     }
 
     puzzle = result.puzzle;
-    solution = result.solution;
-    notes = createNotes();
+    playerBoard = result.puzzle.map((row) => [...row]);
+    solutionBoard = result.solution;
+    candidateNotes = createNotes();
+    mistakeCount = 0;
+    continueCount = 0;
+    isGameOver = false;
     selectedCell = null;
     isShowingAnswer = false;
+    hideGameOverOverlay();
+    updateGameStats();
     setInputMode("normal");
     answerButton.textContent = "答えを見る";
     renderBoard();
@@ -519,7 +626,12 @@ answerButton.addEventListener("click", showAnswer);
 normalModeButton.addEventListener("click", () => setInputMode("normal"));
 memoModeButton.addEventListener("click", () => setInputMode("memo"));
 deleteButton.addEventListener("click", deleteSelectedCell);
+continueButton.addEventListener("click", continueGame);
+gameOverNewGameButton.addEventListener("click", showNewGameConfirmation);
+confirmNewGameButton.addEventListener("click", confirmNewGameFromGameOver);
+cancelNewGameButton.addEventListener("click", cancelNewGameConfirmation);
 
 createNumberPad();
+updateGameStats();
 setDateLine();
 startNewGame();
