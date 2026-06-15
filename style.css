@@ -30,8 +30,7 @@ body {
 }
 
 button,
-select,
-input {
+select {
   font: inherit;
 }
 
@@ -160,9 +159,25 @@ button:disabled {
 .cell {
   position: relative;
   min-width: 0;
+  min-height: 0;
+  padding: 0;
   border: 0;
   border-right: 1px solid var(--thin-rule);
   border-bottom: 1px solid var(--thin-rule);
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.cell.given {
+  cursor: default;
+}
+
+.cell:hover:not(:disabled),
+.cell:focus-visible {
+  color: inherit;
+  background: transparent;
 }
 
 .cell:nth-child(9n) {
@@ -183,12 +198,12 @@ button:disabled {
   border-bottom: 3px solid var(--rule);
 }
 
-.cell input {
+.cell-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
   color: #174f76;
   background: transparent;
   font-family: Georgia, "Yu Mincho", serif;
@@ -196,35 +211,27 @@ button:disabled {
   font-weight: 600;
   line-height: 1;
   text-align: center;
-  caret-color: transparent;
-  appearance: textfield;
-  -moz-appearance: textfield;
+  pointer-events: none;
 }
 
-.cell input::-webkit-outer-spin-button,
-.cell input::-webkit-inner-spin-button {
-  margin: 0;
-  appearance: none;
-}
-
-.cell input:focus {
+.cell:focus-visible {
   outline: 3px solid rgba(23, 79, 118, 0.48);
   outline-offset: -3px;
   background: rgba(23, 79, 118, 0.08);
 }
 
-.cell.given input {
+.cell.given .cell-value {
   color: var(--ink);
   background: rgba(34, 32, 27, 0.055);
   font-weight: 800;
 }
 
-.cell.incorrect input {
+.cell.incorrect .cell-value {
   color: #fff;
   background: var(--incorrect);
 }
 
-.cell.correct input {
+.cell.correct .cell-value {
   color: var(--correct);
   background: rgba(36, 97, 59, 0.11);
 }
@@ -340,21 +347,21 @@ footer {
   }
 }
 
-.cell.related input {
+.cell.related {
   background: rgba(23, 79, 118, 0.055);
 }
 
-.cell.selected input {
+.cell.selected {
   outline: 3px solid rgba(139, 30, 30, 0.7);
   outline-offset: -3px;
   background: rgba(139, 30, 30, 0.1);
 }
 
-.cell.same-number input {
+.cell.same-number {
   background: rgba(245, 184, 66, 0.22);
 }
 
-.cell.selected.same-number input {
+.cell.selected.same-number {
   background: rgba(139, 30, 30, 0.14);
 }
 
@@ -379,15 +386,20 @@ footer {
   justify-content: center;
 }
 
-.cell.has-notes input {
+.cell.has-notes .cell-value {
   color: transparent;
 }
 
 .input-panel {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
   display: grid;
   gap: 10px;
   width: min(92vw, 540px);
   margin: 14px auto 0;
+  padding: 10px 0 12px;
+  background: linear-gradient(rgba(245, 241, 231, 0.9), var(--paper) 26%);
 }
 
 .mode-toggle,
@@ -442,5 +454,101 @@ footer {
   .delete-button,
   .mode-button {
     min-height: 50px;
+  }
+}
+
+.game-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 14px;
+  margin: 0 auto 10px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.game-stats span {
+  min-width: 9.5em;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.game-stats .warning {
+  color: #8a5a00;
+  background: rgba(245, 184, 66, 0.28);
+  border-color: #8a5a00;
+}
+
+.game-stats .danger {
+  color: #fff;
+  background: var(--incorrect);
+  border-color: var(--incorrect);
+}
+
+.game-over-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(30, 29, 26, 0.58);
+}
+
+.game-over-overlay.visible {
+  display: flex;
+}
+
+.game-over-dialog {
+  width: min(92%, 360px);
+  padding: 24px 18px;
+  border: 3px double var(--rule);
+  color: var(--ink);
+  background: rgba(245, 241, 231, 0.98);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.28);
+  text-align: center;
+}
+
+.game-over-title {
+  margin: 0 0 8px;
+  color: var(--incorrect);
+  font-size: clamp(2rem, 9vw, 3.2rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.game-over-message,
+.confirm-message {
+  margin: 0 0 18px;
+  font-weight: 800;
+  line-height: 1.65;
+}
+
+.game-over-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.game-over-actions button {
+  min-height: 52px;
+  touch-action: manipulation;
+}
+
+@media (max-width: 520px) {
+  .game-stats {
+    gap: 6px;
+  }
+
+  .game-stats span {
+    min-width: min(44vw, 11em);
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .game-over-dialog {
+    width: min(96%, 340px);
+    padding: 20px 14px;
   }
 }

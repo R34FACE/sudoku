@@ -3,6 +3,7 @@
 const SIZE = 9;
 const BOX_SIZE = 3;
 const CELL_COUNT = SIZE * SIZE;
+const MAX_MISTAKES = 5;
 
 const DIFFICULTIES = {
   beginner: { label: "初級", min: 35, max: 40 },
@@ -22,15 +23,28 @@ const numberPadElement = document.getElementById("numberPad");
 const deleteButton = document.getElementById("deleteButton");
 const statusElement = document.getElementById("status");
 const loadingElement = document.getElementById("loading");
+const mistakeCounterElement = document.getElementById("mistakeCounter");
+const continueCounterElement = document.getElementById("continueCounter");
+const gameOverOverlayElement = document.getElementById("gameOverOverlay");
+const gameOverMainElement = document.getElementById("gameOverMain");
+const newGameConfirmElement = document.getElementById("newGameConfirm");
+const continueButton = document.getElementById("continueButton");
+const gameOverNewGameButton = document.getElementById("gameOverNewGameButton");
+const confirmNewGameButton = document.getElementById("confirmNewGameButton");
+const cancelNewGameButton = document.getElementById("cancelNewGameButton");
 const dateLineElement = document.getElementById("dateLine");
 
 let puzzle = [];
-let solution = [];
+let playerBoard = createEmptyBoard();
+let solutionBoard = [];
+let candidateNotes = createNotes();
+let mistakeCount = 0;
+let continueCount = 0;
+let isGameOver = false;
 let isShowingAnswer = false;
 let generationId = 0;
 let inputMode = "normal";
 let selectedCell = null;
-let notes = createNotes();
 
 function createNotes() {
   return Array.from({ length: SIZE }, () =>
@@ -194,16 +208,78 @@ function generatePuzzle(blankCount) {
 function setBusy(isBusy) {
   newGameButton.disabled = isBusy;
   difficultyElement.disabled = isBusy;
-  checkButton.disabled = isBusy;
-  answerButton.disabled = isBusy;
-  normalModeButton.disabled = isBusy;
-  memoModeButton.disabled = isBusy;
-  deleteButton.disabled = isBusy;
-  numberPadElement.querySelectorAll("button").forEach((button) => {
-    button.disabled = isBusy;
-  });
   loadingElement.classList.toggle("visible", isBusy);
   loadingElement.setAttribute("aria-hidden", String(!isBusy));
+  updateGameControls(isBusy);
+}
+
+function updateGameControls(isBusy = false) {
+  const controlsDisabled = isBusy || isGameOver;
+  checkButton.disabled = controlsDisabled;
+  answerButton.disabled = controlsDisabled;
+  normalModeButton.disabled = controlsDisabled;
+  memoModeButton.disabled = controlsDisabled;
+  deleteButton.disabled = controlsDisabled;
+  numberPadElement.querySelectorAll("button").forEach((button) => {
+    button.disabled = controlsDisabled;
+  });
+  getCells().forEach((cell) => {
+    if (cell instanceof HTMLButtonElement) {
+      cell.disabled = controlsDisabled || isShowingAnswer;
+    }
+  });
+}
+
+function updateGameStats() {
+  mistakeCounterElement.textContent = `間違い：${mistakeCount} / ${MAX_MISTAKES}`;
+  continueCounterElement.textContent = `コンテニュー：${continueCount}回`;
+  mistakeCounterElement.classList.toggle("warning", mistakeCount >= MAX_MISTAKES - 1 && mistakeCount < MAX_MISTAKES);
+  mistakeCounterElement.classList.toggle("danger", mistakeCount >= MAX_MISTAKES);
+}
+
+function showGameOverOverlay(showConfirm = false) {
+  gameOverOverlayElement.classList.add("visible");
+  gameOverOverlayElement.setAttribute("aria-hidden", "false");
+  gameOverMainElement.hidden = showConfirm;
+  newGameConfirmElement.hidden = !showConfirm;
+}
+
+function hideGameOverOverlay() {
+  gameOverOverlayElement.classList.remove("visible");
+  gameOverOverlayElement.setAttribute("aria-hidden", "true");
+  gameOverMainElement.hidden = false;
+  newGameConfirmElement.hidden = true;
+}
+
+function triggerGameOver() {
+  isGameOver = true;
+  updateGameStats();
+  updateGameControls(false);
+  showGameOverOverlay(false);
+  setStatus("ゲームオーバーです。コンテニューまたはニューゲームを選んでください。", "error");
+}
+
+function continueGame() {
+  mistakeCount = 0;
+  continueCount += 1;
+  isGameOver = false;
+  hideGameOverOverlay();
+  updateGameStats();
+  updateGameControls(false);
+  setStatus("コンテニューしました。間違い回数を0に戻しました。");
+}
+
+function showNewGameConfirmation() {
+  showGameOverOverlay(true);
+}
+
+function cancelNewGameConfirmation() {
+  showGameOverOverlay(false);
+}
+
+function confirmNewGameFromGameOver() {
+  hideGameOverOverlay();
+  startNewGame();
 }
 
 function setStatus(message, type = "") {
@@ -214,30 +290,31 @@ function setStatus(message, type = "") {
 function renderBoard() {
   boardElement.replaceChildren();
 
-  puzzle.forEach((row, rowIndex) => {
+  playerBoard.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
-      const cell = document.createElement("div");
-      const input = document.createElement("input");
+      const isGiven = puzzle[rowIndex][columnIndex] !== 0;
+      const cell = document.createElement(isGiven ? "div" : "button");
+      const valueElement = document.createElement("span");
       const noteGrid = document.createElement("div");
-      const isGiven = value !== 0;
 
       cell.className = `cell${isGiven ? " given" : ""}`;
       cell.dataset.row = String(rowIndex);
       cell.dataset.column = String(columnIndex);
-
-      input.type = "text";
-      input.inputMode = "numeric";
-      input.pattern = "[1-9]";
-      input.maxLength = 1;
-      input.value = isGiven ? String(value) : "";
-      input.readOnly = isGiven;
-      input.tabIndex = isGiven ? -1 : 0;
-      input.dataset.row = String(rowIndex);
-      input.dataset.column = String(columnIndex);
-      input.setAttribute(
+      cell.dataset.value = value ? String(value) : "";
+      cell.setAttribute(
         "aria-label",
-        `${rowIndex + 1}行${columnIndex + 1}列${isGiven ? `、${value}、変更不可` : "、空欄"}`
+        `${rowIndex + 1}行${columnIndex + 1}列${isGiven ? `、${value}、変更不可` : value ? `、${value}` : "、空欄"}`
       );
+
+      valueElement.className = "cell-value";
+      valueElement.textContent = value ? String(value) : "";
+
+      if (isGiven) {
+        cell.setAttribute("aria-disabled", "true");
+      } else {
+        cell.type = "button";
+        cell.addEventListener("click", handleCellSelect);
+      }
 
       noteGrid.className = "notes";
       noteGrid.setAttribute("aria-hidden", "true");
@@ -247,17 +324,7 @@ function renderBoard() {
         noteGrid.appendChild(note);
       }
 
-      input.addEventListener("input", handleCellInput);
-      input.addEventListener("keydown", handleCellKeydown);
-      input.addEventListener("focus", handleCellFocus);
-      input.addEventListener("click", handleCellFocus);
-      cell.addEventListener("click", () => {
-        if (!input.readOnly) {
-          input.focus();
-        }
-      });
-
-      cell.append(input, noteGrid);
+      cell.append(valueElement, noteGrid);
       boardElement.appendChild(cell);
       updateCellNotes(rowIndex, columnIndex);
     });
@@ -266,16 +333,16 @@ function renderBoard() {
   updateHighlights();
 }
 
-function handleCellFocus(event) {
+function handleCellSelect(event) {
+  if (isGameOver || isShowingAnswer) {
+    return;
+  }
+
   selectedCell = {
-    row: Number(event.target.dataset.row),
-    column: Number(event.target.dataset.column)
+    row: Number(event.currentTarget.dataset.row),
+    column: Number(event.currentTarget.dataset.column)
   };
   updateHighlights();
-}
-
-function getInput(row, column) {
-  return boardElement.querySelector(`input[data-row="${row}"][data-column="${column}"]`);
 }
 
 function getCell(row, column) {
@@ -288,9 +355,8 @@ function updateCellNotes(row, column) {
     return;
   }
 
-  const input = getInput(row, column);
-  const cellNotes = notes[row][column];
-  cell.classList.toggle("has-notes", !input.value && cellNotes.size > 0);
+  const cellNotes = candidateNotes[row][column];
+  cell.classList.toggle("has-notes", !getCellValue(cell) && cellNotes.size > 0);
   cell.querySelectorAll(".notes span").forEach((note) => {
     const number = Number(note.dataset.number);
     note.textContent = cellNotes.has(number) ? String(number) : "";
@@ -313,31 +379,53 @@ function clearCheckClasses() {
   });
 }
 
-function getSelectedInput() {
+function getCellValue(cell) {
+  return cell?.dataset.value || "";
+}
+
+function setCellValue(cell, value) {
+  cell.dataset.value = value;
+  cell.querySelector(".cell-value").textContent = value;
+}
+
+function getSelectedEditableCell() {
   if (!selectedCell) {
     return null;
   }
-  return getInput(selectedCell.row, selectedCell.column);
+
+  const cell = getCell(selectedCell.row, selectedCell.column);
+  return cell instanceof HTMLButtonElement ? cell : null;
 }
 
 function enterNumber(number) {
-  const input = getSelectedInput();
-  if (!input || input.readOnly || isShowingAnswer) {
+  const cell = getSelectedEditableCell();
+  if (!cell || isShowingAnswer || isGameOver) {
     return;
   }
 
-  const row = Number(input.dataset.row);
-  const column = Number(input.dataset.column);
+  const row = Number(cell.dataset.row);
+  const column = Number(cell.dataset.column);
   clearCheckClasses();
 
   if (inputMode === "normal") {
-    input.value = input.value === String(number) ? "" : String(number);
-    notes[row][column].clear();
-  } else if (!input.value) {
-    if (notes[row][column].has(number)) {
-      notes[row][column].delete(number);
+    if (number !== solutionBoard[row][column]) {
+      mistakeCount += 1;
+      updateGameStats();
+      setStatus(`間違いです。${MAX_MISTAKES}回でゲームオーバーになります。`, "error");
+      if (mistakeCount >= MAX_MISTAKES) {
+        triggerGameOver();
+      }
+      return;
+    }
+
+    playerBoard[row][column] = number;
+    setCellValue(cell, String(number));
+    candidateNotes[row][column].clear();
+  } else if (!getCellValue(cell)) {
+    if (candidateNotes[row][column].has(number)) {
+      candidateNotes[row][column].delete(number);
     } else {
-      notes[row][column].add(number);
+      candidateNotes[row][column].add(number);
     }
   }
 
@@ -347,15 +435,16 @@ function enterNumber(number) {
 }
 
 function deleteSelectedCell() {
-  const input = getSelectedInput();
-  if (!input || input.readOnly || isShowingAnswer) {
+  const cell = getSelectedEditableCell();
+  if (!cell || isShowingAnswer || isGameOver) {
     return;
   }
 
-  const row = Number(input.dataset.row);
-  const column = Number(input.dataset.column);
-  input.value = "";
-  notes[row][column].clear();
+  const row = Number(cell.dataset.row);
+  const column = Number(cell.dataset.column);
+  setCellValue(cell, "");
+  playerBoard[row][column] = 0;
+  candidateNotes[row][column].clear();
   clearCheckClasses();
   updateCellNotes(row, column);
   updateHighlights();
@@ -363,7 +452,7 @@ function deleteSelectedCell() {
 }
 
 function updateHighlights() {
-  const selectedValue = selectedCell ? getInput(selectedCell.row, selectedCell.column)?.value : "";
+  const selectedValue = selectedCell ? getCellValue(getCell(selectedCell.row, selectedCell.column)) : "";
   boardElement.querySelectorAll(".cell").forEach((cell) => {
     const row = Number(cell.dataset.row);
     const column = Number(cell.dataset.column);
@@ -372,11 +461,10 @@ function updateHighlights() {
     const sameBox = selectedCell &&
       Math.floor(row / BOX_SIZE) === Math.floor(selectedCell.row / BOX_SIZE) &&
       Math.floor(column / BOX_SIZE) === Math.floor(selectedCell.column / BOX_SIZE);
-    const input = cell.querySelector("input");
 
     cell.classList.toggle("selected", Boolean(selectedCell && row === selectedCell.row && column === selectedCell.column));
     cell.classList.toggle("related", Boolean((sameRow || sameColumn || sameBox) && !(selectedCell && row === selectedCell.row && column === selectedCell.column)));
-    cell.classList.toggle("same-number", Boolean(selectedValue && input.value === selectedValue));
+    cell.classList.toggle("same-number", Boolean(selectedValue && getCellValue(cell) === selectedValue));
   });
 }
 
@@ -392,68 +480,17 @@ function createNumberPad() {
   }
 }
 
-function handleCellInput(event) {
-  const input = event.target;
-  input.value = input.value.replace(/[^1-9]/g, "").slice(-1);
-  const row = Number(input.dataset.row);
-  const column = Number(input.dataset.column);
-  notes[row][column].clear();
-  updateCellNotes(row, column);
-  clearCheckClasses();
-  updateHighlights();
-  setStatus("数字を入力してください。");
+function getCells() {
+  return [...boardElement.querySelectorAll(".cell")];
 }
 
-function handleCellKeydown(event) {
-  if (/^[1-9]$/.test(event.key)) {
-    event.preventDefault();
-    enterNumber(Number(event.key));
-    return;
-  }
-
-  if (["Backspace", "Delete", "0"].includes(event.key)) {
-    event.preventDefault();
-    deleteSelectedCell();
-    return;
-  }
-
-  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-    return;
-  }
-
-  event.preventDefault();
-  const row = Number(event.target.dataset.row);
-  const column = Number(event.target.dataset.column);
-  const offsets = {
-    ArrowUp: [-1, 0],
-    ArrowDown: [1, 0],
-    ArrowLeft: [0, -1],
-    ArrowRight: [0, 1]
-  };
-  const [rowOffset, columnOffset] = offsets[event.key];
-  let nextRow = row;
-  let nextColumn = column;
-
-  for (let step = 0; step < CELL_COUNT; step += 1) {
-    nextRow = (nextRow + rowOffset + SIZE) % SIZE;
-    nextColumn = (nextColumn + columnOffset + SIZE) % SIZE;
-    const nextInput = boardElement.querySelector(
-      `input[data-row="${nextRow}"][data-column="${nextColumn}"]`
-    );
-    if (nextInput && !nextInput.readOnly) {
-      nextInput.focus();
-      selectedCell = { row: nextRow, column: nextColumn };
-      updateHighlights();
-      return;
-    }
-  }
-}
-
-function getInputs() {
-  return [...boardElement.querySelectorAll("input")];
-}
 
 function checkAnswer() {
+  if (isGameOver) {
+    setStatus("ゲームオーバー中です。コンテニューまたはニューゲームを選んでください。", "error");
+    return;
+  }
+
   if (isShowingAnswer) {
     setStatus("完成盤面を表示しています。", "success");
     return;
@@ -462,20 +499,19 @@ function checkAnswer() {
   let hasEmptyCell = false;
   let hasIncorrectCell = false;
 
-  getInputs().forEach((input) => {
-    const cell = input.parentElement;
+  getCells().forEach((cell) => {
     cell.classList.remove("incorrect", "correct");
-    if (input.readOnly) {
+    if (!(cell instanceof HTMLButtonElement)) {
       return;
     }
 
-    const row = Number(input.dataset.row);
-    const column = Number(input.dataset.column);
-    const value = Number(input.value);
+    const row = Number(cell.dataset.row);
+    const column = Number(cell.dataset.column);
+    const value = Number(getCellValue(cell));
 
-    if (!input.value) {
+    if (!getCellValue(cell)) {
       hasEmptyCell = true;
-    } else if (value !== solution[row][column]) {
+    } else if (value !== solutionBoard[row][column]) {
       hasIncorrectCell = true;
       cell.classList.add("incorrect");
     } else {
@@ -493,6 +529,10 @@ function checkAnswer() {
 }
 
 function showAnswer() {
+  if (isGameOver) {
+    return;
+  }
+
   if (isShowingAnswer) {
     renderBoard();
     isShowingAnswer = false;
@@ -501,14 +541,13 @@ function showAnswer() {
     return;
   }
 
-  getInputs().forEach((input) => {
-    const row = Number(input.dataset.row);
-    const column = Number(input.dataset.column);
-    input.value = String(solution[row][column]);
-    input.readOnly = true;
-    notes[row][column].clear();
+  getCells().forEach((cell) => {
+    const row = Number(cell.dataset.row);
+    const column = Number(cell.dataset.column);
+    setCellValue(cell, String(solutionBoard[row][column]));
+    candidateNotes[row][column].clear();
     updateCellNotes(row, column);
-    input.parentElement.classList.remove("incorrect", "correct");
+    cell.classList.remove("incorrect", "correct");
   });
 
   isShowingAnswer = true;
@@ -544,10 +583,16 @@ function startNewGame() {
     }
 
     puzzle = result.puzzle;
-    solution = result.solution;
-    notes = createNotes();
+    playerBoard = result.puzzle.map((row) => [...row]);
+    solutionBoard = result.solution;
+    candidateNotes = createNotes();
+    mistakeCount = 0;
+    continueCount = 0;
+    isGameOver = false;
     selectedCell = null;
     isShowingAnswer = false;
+    hideGameOverOverlay();
+    updateGameStats();
     setInputMode("normal");
     answerButton.textContent = "答えを見る";
     renderBoard();
@@ -581,7 +626,12 @@ answerButton.addEventListener("click", showAnswer);
 normalModeButton.addEventListener("click", () => setInputMode("normal"));
 memoModeButton.addEventListener("click", () => setInputMode("memo"));
 deleteButton.addEventListener("click", deleteSelectedCell);
+continueButton.addEventListener("click", continueGame);
+gameOverNewGameButton.addEventListener("click", showNewGameConfirmation);
+confirmNewGameButton.addEventListener("click", confirmNewGameFromGameOver);
+cancelNewGameButton.addEventListener("click", cancelNewGameConfirmation);
 
 createNumberPad();
+updateGameStats();
 setDateLine();
 startNewGame();
