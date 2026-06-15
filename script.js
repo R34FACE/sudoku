@@ -216,28 +216,29 @@ function renderBoard() {
 
   puzzle.forEach((row, rowIndex) => {
     row.forEach((value, columnIndex) => {
-      const cell = document.createElement("div");
-      const input = document.createElement("input");
-      const noteGrid = document.createElement("div");
       const isGiven = value !== 0;
+      const cell = document.createElement(isGiven ? "div" : "button");
+      const valueElement = document.createElement("span");
+      const noteGrid = document.createElement("div");
 
       cell.className = `cell${isGiven ? " given" : ""}`;
       cell.dataset.row = String(rowIndex);
       cell.dataset.column = String(columnIndex);
-
-      input.type = "text";
-      input.inputMode = "numeric";
-      input.pattern = "[1-9]";
-      input.maxLength = 1;
-      input.value = isGiven ? String(value) : "";
-      input.readOnly = isGiven;
-      input.tabIndex = isGiven ? -1 : 0;
-      input.dataset.row = String(rowIndex);
-      input.dataset.column = String(columnIndex);
-      input.setAttribute(
+      cell.dataset.value = isGiven ? String(value) : "";
+      cell.setAttribute(
         "aria-label",
         `${rowIndex + 1}行${columnIndex + 1}列${isGiven ? `、${value}、変更不可` : "、空欄"}`
       );
+
+      valueElement.className = "cell-value";
+      valueElement.textContent = isGiven ? String(value) : "";
+
+      if (isGiven) {
+        cell.setAttribute("aria-disabled", "true");
+      } else {
+        cell.type = "button";
+        cell.addEventListener("click", handleCellSelect);
+      }
 
       noteGrid.className = "notes";
       noteGrid.setAttribute("aria-hidden", "true");
@@ -247,17 +248,7 @@ function renderBoard() {
         noteGrid.appendChild(note);
       }
 
-      input.addEventListener("input", handleCellInput);
-      input.addEventListener("keydown", handleCellKeydown);
-      input.addEventListener("focus", handleCellFocus);
-      input.addEventListener("click", handleCellFocus);
-      cell.addEventListener("click", () => {
-        if (!input.readOnly) {
-          input.focus();
-        }
-      });
-
-      cell.append(input, noteGrid);
+      cell.append(valueElement, noteGrid);
       boardElement.appendChild(cell);
       updateCellNotes(rowIndex, columnIndex);
     });
@@ -266,16 +257,12 @@ function renderBoard() {
   updateHighlights();
 }
 
-function handleCellFocus(event) {
+function handleCellSelect(event) {
   selectedCell = {
-    row: Number(event.target.dataset.row),
-    column: Number(event.target.dataset.column)
+    row: Number(event.currentTarget.dataset.row),
+    column: Number(event.currentTarget.dataset.column)
   };
   updateHighlights();
-}
-
-function getInput(row, column) {
-  return boardElement.querySelector(`input[data-row="${row}"][data-column="${column}"]`);
 }
 
 function getCell(row, column) {
@@ -288,9 +275,8 @@ function updateCellNotes(row, column) {
     return;
   }
 
-  const input = getInput(row, column);
   const cellNotes = notes[row][column];
-  cell.classList.toggle("has-notes", !input.value && cellNotes.size > 0);
+  cell.classList.toggle("has-notes", !getCellValue(cell) && cellNotes.size > 0);
   cell.querySelectorAll(".notes span").forEach((note) => {
     const number = Number(note.dataset.number);
     note.textContent = cellNotes.has(number) ? String(number) : "";
@@ -313,27 +299,38 @@ function clearCheckClasses() {
   });
 }
 
-function getSelectedInput() {
+function getCellValue(cell) {
+  return cell?.dataset.value || "";
+}
+
+function setCellValue(cell, value) {
+  cell.dataset.value = value;
+  cell.querySelector(".cell-value").textContent = value;
+}
+
+function getSelectedEditableCell() {
   if (!selectedCell) {
     return null;
   }
-  return getInput(selectedCell.row, selectedCell.column);
+
+  const cell = getCell(selectedCell.row, selectedCell.column);
+  return cell instanceof HTMLButtonElement ? cell : null;
 }
 
 function enterNumber(number) {
-  const input = getSelectedInput();
-  if (!input || input.readOnly || isShowingAnswer) {
+  const cell = getSelectedEditableCell();
+  if (!cell || isShowingAnswer) {
     return;
   }
 
-  const row = Number(input.dataset.row);
-  const column = Number(input.dataset.column);
+  const row = Number(cell.dataset.row);
+  const column = Number(cell.dataset.column);
   clearCheckClasses();
 
   if (inputMode === "normal") {
-    input.value = input.value === String(number) ? "" : String(number);
+    setCellValue(cell, getCellValue(cell) === String(number) ? "" : String(number));
     notes[row][column].clear();
-  } else if (!input.value) {
+  } else if (!getCellValue(cell)) {
     if (notes[row][column].has(number)) {
       notes[row][column].delete(number);
     } else {
@@ -347,14 +344,14 @@ function enterNumber(number) {
 }
 
 function deleteSelectedCell() {
-  const input = getSelectedInput();
-  if (!input || input.readOnly || isShowingAnswer) {
+  const cell = getSelectedEditableCell();
+  if (!cell || isShowingAnswer) {
     return;
   }
 
-  const row = Number(input.dataset.row);
-  const column = Number(input.dataset.column);
-  input.value = "";
+  const row = Number(cell.dataset.row);
+  const column = Number(cell.dataset.column);
+  setCellValue(cell, "");
   notes[row][column].clear();
   clearCheckClasses();
   updateCellNotes(row, column);
@@ -363,7 +360,7 @@ function deleteSelectedCell() {
 }
 
 function updateHighlights() {
-  const selectedValue = selectedCell ? getInput(selectedCell.row, selectedCell.column)?.value : "";
+  const selectedValue = selectedCell ? getCellValue(getCell(selectedCell.row, selectedCell.column)) : "";
   boardElement.querySelectorAll(".cell").forEach((cell) => {
     const row = Number(cell.dataset.row);
     const column = Number(cell.dataset.column);
@@ -372,11 +369,10 @@ function updateHighlights() {
     const sameBox = selectedCell &&
       Math.floor(row / BOX_SIZE) === Math.floor(selectedCell.row / BOX_SIZE) &&
       Math.floor(column / BOX_SIZE) === Math.floor(selectedCell.column / BOX_SIZE);
-    const input = cell.querySelector("input");
 
     cell.classList.toggle("selected", Boolean(selectedCell && row === selectedCell.row && column === selectedCell.column));
     cell.classList.toggle("related", Boolean((sameRow || sameColumn || sameBox) && !(selectedCell && row === selectedCell.row && column === selectedCell.column)));
-    cell.classList.toggle("same-number", Boolean(selectedValue && input.value === selectedValue));
+    cell.classList.toggle("same-number", Boolean(selectedValue && getCellValue(cell) === selectedValue));
   });
 }
 
@@ -392,66 +388,10 @@ function createNumberPad() {
   }
 }
 
-function handleCellInput(event) {
-  const input = event.target;
-  input.value = input.value.replace(/[^1-9]/g, "").slice(-1);
-  const row = Number(input.dataset.row);
-  const column = Number(input.dataset.column);
-  notes[row][column].clear();
-  updateCellNotes(row, column);
-  clearCheckClasses();
-  updateHighlights();
-  setStatus("数字を入力してください。");
+function getCells() {
+  return [...boardElement.querySelectorAll(".cell")];
 }
 
-function handleCellKeydown(event) {
-  if (/^[1-9]$/.test(event.key)) {
-    event.preventDefault();
-    enterNumber(Number(event.key));
-    return;
-  }
-
-  if (["Backspace", "Delete", "0"].includes(event.key)) {
-    event.preventDefault();
-    deleteSelectedCell();
-    return;
-  }
-
-  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
-    return;
-  }
-
-  event.preventDefault();
-  const row = Number(event.target.dataset.row);
-  const column = Number(event.target.dataset.column);
-  const offsets = {
-    ArrowUp: [-1, 0],
-    ArrowDown: [1, 0],
-    ArrowLeft: [0, -1],
-    ArrowRight: [0, 1]
-  };
-  const [rowOffset, columnOffset] = offsets[event.key];
-  let nextRow = row;
-  let nextColumn = column;
-
-  for (let step = 0; step < CELL_COUNT; step += 1) {
-    nextRow = (nextRow + rowOffset + SIZE) % SIZE;
-    nextColumn = (nextColumn + columnOffset + SIZE) % SIZE;
-    const nextInput = boardElement.querySelector(
-      `input[data-row="${nextRow}"][data-column="${nextColumn}"]`
-    );
-    if (nextInput && !nextInput.readOnly) {
-      nextInput.focus();
-      selectedCell = { row: nextRow, column: nextColumn };
-      updateHighlights();
-      return;
-    }
-  }
-}
-
-function getInputs() {
-  return [...boardElement.querySelectorAll("input")];
-}
 
 function checkAnswer() {
   if (isShowingAnswer) {
@@ -462,18 +402,17 @@ function checkAnswer() {
   let hasEmptyCell = false;
   let hasIncorrectCell = false;
 
-  getInputs().forEach((input) => {
-    const cell = input.parentElement;
+  getCells().forEach((cell) => {
     cell.classList.remove("incorrect", "correct");
-    if (input.readOnly) {
+    if (!(cell instanceof HTMLButtonElement)) {
       return;
     }
 
-    const row = Number(input.dataset.row);
-    const column = Number(input.dataset.column);
-    const value = Number(input.value);
+    const row = Number(cell.dataset.row);
+    const column = Number(cell.dataset.column);
+    const value = Number(getCellValue(cell));
 
-    if (!input.value) {
+    if (!getCellValue(cell)) {
       hasEmptyCell = true;
     } else if (value !== solution[row][column]) {
       hasIncorrectCell = true;
@@ -501,14 +440,13 @@ function showAnswer() {
     return;
   }
 
-  getInputs().forEach((input) => {
-    const row = Number(input.dataset.row);
-    const column = Number(input.dataset.column);
-    input.value = String(solution[row][column]);
-    input.readOnly = true;
+  getCells().forEach((cell) => {
+    const row = Number(cell.dataset.row);
+    const column = Number(cell.dataset.column);
+    setCellValue(cell, String(solution[row][column]));
     notes[row][column].clear();
     updateCellNotes(row, column);
-    input.parentElement.classList.remove("incorrect", "correct");
+    cell.classList.remove("incorrect", "correct");
   });
 
   isShowingAnswer = true;
